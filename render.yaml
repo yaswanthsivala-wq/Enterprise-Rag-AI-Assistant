@@ -15,6 +15,11 @@ services:
         value: /var/data/vector_store
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      # Optional: only needed if you switch LLM_PROVIDER to "watsonx"
       - key: IBM_API_KEY
         sync: false
       - key: IBM_URL

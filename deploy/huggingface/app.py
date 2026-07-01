@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import shutil
 import logging
 import threading
 
@@ -51,6 +52,15 @@ def _session_id():
         sid = uuid.uuid4().hex
         session["sid"] = sid
     return sid
+
+
+def _session_paths(sid):
+    """Each browser session (chat) gets its own upload folder and FAISS index,
+    so documents uploaded in one chat never leak into another chat's answers."""
+    upload_dir = os.path.join(config.UPLOAD_FOLDER, sid)
+    vector_dir = os.path.join(config.VECTOR_DB, sid)
+    os.makedirs(upload_dir, exist_ok=True)
+    return upload_dir, vector_dir
 
 
 def _get_history(sid):
@@ -115,16 +125,19 @@ def upload():
         if any(not _is_pdf(f.filename) for f in files):
             return jsonify({"error": "Only .pdf files are accepted."}), 400
 
+        sid = _session_id()
+        upload_dir, vector_dir = _session_paths(sid)
+
         file_paths = []
         for f in files:
             filename = secure_filename(f.filename)
             if not filename:
                 continue
-            path = os.path.join(config.UPLOAD_FOLDER, filename)
+            path = os.path.join(upload_dir, filename)
             f.save(path)
             file_paths.append(path)
 
-        chunks = load_and_embed_pdfs(file_paths)
+        chunks = load_and_embed_pdfs(file_paths, vector_db_path=vector_dir)
         if chunks == 0:
             return jsonify(
                 {"message": "No extractable text found (are these scanned PDFs?)."}
@@ -146,7 +159,10 @@ def ask():
             return jsonify({"error": "Question is required."}), 400
 
         sid = _session_id()
-        answer, sources = answer_question(question, _get_history(sid))
+        _, vector_dir = _session_paths(sid)
+        answer, sources = answer_question(
+            question, _get_history(sid), vector_db_path=vector_dir
+        )
         _append_history(sid, question, answer)
         return jsonify({"answer": answer, "sources": sources})
     except HTTPException:
@@ -164,7 +180,9 @@ def ask():
 @app.route("/documents")
 def documents():
     try:
-        return jsonify(sorted(os.listdir(config.UPLOAD_FOLDER)))
+        sid = _session_id()
+        upload_dir, _ = _session_paths(sid)
+        return jsonify(sorted(os.listdir(upload_dir)))
     except FileNotFoundError:
         return jsonify([])
     except Exception:
@@ -174,9 +192,18 @@ def documents():
 
 @app.route("/clear-memory", methods=["POST"])
 def clear_memory():
+    """Used by the 'New chat' button: wipes this session's chat history AND its
+    uploaded documents/vector store, so the next chat starts from a clean slate
+    and only ever answers from whatever gets uploaded in it."""
     sid = _session_id()
     with _hist_lock:
         _histories.pop(sid, None)
+
+    upload_dir, vector_dir = _session_paths(sid)
+    shutil.rmtree(upload_dir, ignore_errors=True)
+    shutil.rmtree(vector_dir, ignore_errors=True)
+    os.makedirs(upload_dir, exist_ok=True)
+
     return jsonify({"message": "Chat memory cleared"})
 
 

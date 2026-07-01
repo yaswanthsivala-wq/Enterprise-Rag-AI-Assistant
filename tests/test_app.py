@@ -44,7 +44,7 @@ def test_upload_rejects_non_pdf(client):
 
 
 def test_upload_success(client, appmod, monkeypatch):
-    monkeypatch.setattr(appmod, "load_and_embed_pdfs", lambda paths: 7)
+    monkeypatch.setattr(appmod, "load_and_embed_pdfs", lambda paths, vector_db_path=None: 7)
     data = {"files": (io.BytesIO(b"%PDF-1.4 fake"), "doc.pdf")}
     r = client.post("/upload", data=data, content_type="multipart/form-data")
     assert r.status_code == 200
@@ -57,7 +57,10 @@ def test_ask_requires_question(client):
 
 
 def test_ask_success(client, appmod, monkeypatch):
-    monkeypatch.setattr(appmod, "answer_question", lambda q, h: ("an answer", ["s.pdf (Chunk 1)"]))
+    monkeypatch.setattr(
+        appmod, "answer_question",
+        lambda q, h, vector_db_path=None: ("an answer", ["s.pdf (Chunk 1)"]),
+    )
     r = client.post("/ask", json={"question": "what is x?"})
     assert r.status_code == 200
     body = r.get_json()
@@ -66,7 +69,7 @@ def test_ask_success(client, appmod, monkeypatch):
 
 
 def test_error_response_is_sanitized(client, appmod, monkeypatch):
-    def boom(q, h):
+    def boom(q, h, vector_db_path=None):
         raise ValueError("internal path /etc/secret leaked")
 
     monkeypatch.setattr(appmod, "answer_question", boom)
@@ -80,7 +83,7 @@ def test_error_response_is_sanitized(client, appmod, monkeypatch):
 def test_session_isolation_and_history(appmod, monkeypatch):
     seen = []
 
-    def capture(q, h):
+    def capture(q, h, vector_db_path=None):
         seen.append(list(h))
         return ("ok", [])
 
@@ -102,7 +105,10 @@ def test_session_isolation_and_history(appmod, monkeypatch):
 
 def test_clear_memory_resets_history(appmod, monkeypatch):
     seen = []
-    monkeypatch.setattr(appmod, "answer_question", lambda q, h: (seen.append(list(h)) or ("ok", [])))
+    monkeypatch.setattr(
+        appmod, "answer_question",
+        lambda q, h, vector_db_path=None: (seen.append(list(h)) or ("ok", [])),
+    )
     appmod.app.config.update(TESTING=True)
     c = appmod.app.test_client()
 
@@ -118,3 +124,39 @@ def test_upload_too_large(client, appmod):
     r = client.post("/upload", data=data, content_type="multipart/form-data")
     assert r.status_code == 413
     appmod.app.config["MAX_CONTENT_LENGTH"] = None  # reset for other tests
+
+
+def test_documents_are_isolated_per_session(appmod, monkeypatch):
+    monkeypatch.setattr(appmod, "load_and_embed_pdfs", lambda paths, vector_db_path=None: 3)
+    appmod.app.config.update(TESTING=True)
+
+    a = appmod.app.test_client()
+    b = appmod.app.test_client()
+
+    a.post(
+        "/upload",
+        data={"files": (io.BytesIO(b"%PDF-1.4 fake"), "chat-a-only.pdf")},
+        content_type="multipart/form-data",
+    )
+
+    docs_a = a.get("/documents").get_json()
+    docs_b = b.get("/documents").get_json()
+
+    assert docs_a == ["chat-a-only.pdf"]
+    assert docs_b == []  # a different chat sees none of chat A's documents
+
+
+def test_new_chat_wipes_documents(appmod, monkeypatch):
+    monkeypatch.setattr(appmod, "load_and_embed_pdfs", lambda paths, vector_db_path=None: 3)
+    appmod.app.config.update(TESTING=True)
+    c = appmod.app.test_client()
+
+    c.post(
+        "/upload",
+        data={"files": (io.BytesIO(b"%PDF-1.4 fake"), "old-doc.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert c.get("/documents").get_json() == ["old-doc.pdf"]
+
+    c.post("/clear-memory")  # "New chat"
+    assert c.get("/documents").get_json() == []

@@ -134,19 +134,24 @@ def chunk_text(text):
     return splitter.split_text(text)
 
 
-def _vector_store_exists():
-    return os.path.exists(os.path.join(config.VECTOR_DB, "index.faiss"))
+def _vector_store_exists(vector_db_path=None):
+    path = vector_db_path or config.VECTOR_DB
+    return os.path.exists(os.path.join(path, "index.faiss"))
 
 
-def load_and_embed_pdfs(pdf_paths):
+def load_and_embed_pdfs(pdf_paths, vector_db_path=None):
     """Embed the given PDFs and ADD them to the vector store.
 
     Unlike the original implementation, this appends to an existing index rather
     than overwriting it, so uploading a second batch does not discard the first.
-    Returns the number of new chunks added.
+
+    ``vector_db_path`` lets each chat session keep its own isolated index
+    (defaults to the shared ``config.VECTOR_DB`` if not given, for backward
+    compatibility). Returns the number of new chunks added.
     """
     from langchain_community.vectorstores import FAISS
 
+    path = vector_db_path or config.VECTOR_DB
     embeddings = _get_embeddings()
 
     all_chunks, metadata = [], []
@@ -163,15 +168,16 @@ def load_and_embed_pdfs(pdf_paths):
     if not all_chunks:
         return 0
 
-    if _vector_store_exists():
+    if _vector_store_exists(path):
         store = FAISS.load_local(
-            config.VECTOR_DB, embeddings, allow_dangerous_deserialization=True
+            path, embeddings, allow_dangerous_deserialization=True
         )
         store.add_texts(all_chunks, metadatas=metadata)
     else:
         store = FAISS.from_texts(all_chunks, embeddings, metadatas=metadata)
 
-    store.save_local(config.VECTOR_DB)
+    os.makedirs(path, exist_ok=True)
+    store.save_local(path)
     return len(all_chunks)
 
 
@@ -190,15 +196,16 @@ def _extract_generated_text(response):
     return str(response)
 
 
-def answer_question(question, chat_history):
-    if not _vector_store_exists():
+def answer_question(question, chat_history, vector_db_path=None):
+    path = vector_db_path or config.VECTOR_DB
+    if not _vector_store_exists(path):
         return ("No documents uploaded yet.", [])
 
     from langchain_community.vectorstores import FAISS
 
     embeddings = _get_embeddings()
     store = FAISS.load_local(
-        config.VECTOR_DB, embeddings, allow_dangerous_deserialization=True
+        path, embeddings, allow_dangerous_deserialization=True
     )
     docs = store.similarity_search(question, k=config.RETRIEVAL_K)
 
