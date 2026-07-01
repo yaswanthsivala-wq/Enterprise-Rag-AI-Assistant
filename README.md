@@ -9,8 +9,10 @@ watsonx.ai optional), containerized with Docker and deployed on Hugging Face Spa
 
 ## Screenshots
 
-> Add screenshots here: drop image files in a `docs/` folder and reference them, e.g.
-> `![Chat UI](docs/screenshot.png)`
+### Chat Interface
+![Chat UI](docs/chat-ui.jpg)
+
+*Upload PDFs, ask questions, and get answers grounded in your documents with source citations.*
 
 ## Architecture
 
