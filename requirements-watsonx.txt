@@ -1,0 +1,2 @@
+# Optional: only needed if you set LLM_PROVIDER=watsonx
+ibm-watsonx-ai==1.1.24

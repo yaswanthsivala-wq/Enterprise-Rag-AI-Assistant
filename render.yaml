@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: enterprise-rag-assistant
+    runtime: docker
+    # Free instances have no persistent disk and limited RAM; "starter" is
+    # recommended so the FAISS index/uploads persist and FastEmbed has memory.
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: UPLOAD_FOLDER
+        value: /var/data/uploads
+      - key: VECTOR_DB
+        value: /var/data/vector_store
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: IBM_API_KEY
+        sync: false
+      - key: IBM_URL
+        sync: false
+      - key: IBM_PROJECT_ID
+        sync: false
+    disk:
+      name: rag-data
+      mountPath: /var/data
+      sizeGB: 1

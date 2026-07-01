@@ -1,0 +1,12 @@
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+vector_store
+uploads
+.env
+.git
+.github
+tests
+*.md

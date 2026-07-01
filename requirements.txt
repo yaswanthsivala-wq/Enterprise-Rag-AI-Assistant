@@ -1,0 +1,16 @@
+# Web server
+Flask>=3.0,<4
+gunicorn>=21,<24
+python-dotenv>=1,<2
+
+# PDF parsing (maintained successor to the EOL PyPDF2)
+pypdf>=4,<6
+
+# RAG / retrieval (embeddings + vector store run locally, no API key needed)
+langchain-text-splitters>=0.3,<0.4
+langchain-community>=0.3,<0.4
+faiss-cpu>=1.9
+fastembed>=0.6,<0.8
+
+# LLM provider: Groq (free tier, no credit card) -> https://console.groq.com
+groq>=1,<2
